@@ -26,7 +26,7 @@ if "%Sceltaattivazione%" == "3" ( goto :serverkms )
 
 ::============================================================================
 ::
-::  
+::   
 ::     
 ::
 ::============================================================================
@@ -129,7 +129,7 @@ echo:
 echo Null service is not running, script may crash...
 echo:
 echo:
-echo Help - troubleshoot
+echo Usa fix_service
 echo:
 echo:
 ping 127.0.0.1 -n 20
@@ -214,9 +214,9 @@ goto dk_done
 
 ::  Check PowerShell
 
-REM :PowerShellTest: $ExecutionContext.SessionState.LanguageMode :PowerShellTest:
+REM :PStest: $ExecutionContext.SessionState.LanguageMode :PStest:
 
-cmd /c "%psc% "$f=[io.file]::ReadAllText('!_batp!') -split ':PowerShellTest:\s*';iex ($f[1])"" | find /i "FullLanguage" %nul1% || (
+cmd /c "%psc% "$f=[io.file]::ReadAllText('!_batp!') -split ':PStest:\s*';iex ($f[1])"" | find /i "FullLanguage" %nul1% || (
 %eline%
 cmd /c "%psc% "$ExecutionContext.SessionState.LanguageMode""
 echo:
@@ -225,14 +225,14 @@ echo Failed to run Powershell command but Powershell is working.
 echo:
 cmd /c "%psc% ""$av = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct; $n = @(); foreach ($i in $av) { if ($i.displayName -notlike '*windows*') { $n += $i.displayName } }; if ($n) { Write-Host ('Installed 3rd party Antivirus might be blocking the script - ' + ($n -join ', ')) -ForegroundColor White -BackgroundColor Blue }"""
 echo:
-set fixes=%fixes% troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+set fixes=%fixes% Usa troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa troubleshoot"
 ) || (
 echo PowerShell is not working. Aborting...
 echo If you have applied restrictions on Powershell then undo those changes.
 echo:
-set fixes=%fixes% fix_powershell
-call :dk_color2 %Blue% "Help - " %_Yellow% " fix_powershell"
+set fixes=%fixes% Usa fix_powershell
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa fix_powershell"
 )
 goto dk_done
 )
@@ -312,8 +312,8 @@ if not exist %SysPath%\%%# (
 %eline%
 echo [%SysPath%\%%#] file is missing, aborting...
 echo:
-set fixes=%fixes% troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+set fixes=%fixes% Usa troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa troubleshoot"
 goto dk_done
 )
 )
@@ -338,7 +338,7 @@ cls
 echo ___________________________________________________________________________________________
 echo:
 call :dk_color2 %_White% "     " %Green% "%winos% attivato permanentemente."
-call :dk_color2 %_White% "     " %Gray% "Attivazione non richiesta."
+call :dk_color2 %_White% "     " %Gray% "Attivazione non necessaria."
 echo ___________________________________________________________________________________________
 if %_unattended%==1 goto dk_done
 echo:
@@ -358,8 +358,8 @@ echo [%winos% ^| %winbuild%]
 echo:
 echo Evaluation editions cannot be activated outside of their evaluation period. 
 echo:
-set fixes=%fixes% evaluation_editions
-call :dk_color2 %Blue% "Help - " %_Yellow% " evaluation_editions"
+set fixes=%fixes% Usa evaluation_editions
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa evaluation_editions"
 goto dk_done
 )
 )
@@ -445,8 +445,8 @@ set fixes=%fixes%
 echo
 ) else (
 echo Required license files not found in %SysPath%\spp\tokens\skus\
-set fixes=%fixes% troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+set fixes=%fixes% Usa troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa troubleshoot"
 )
 echo:
 goto dk_done
@@ -621,8 +621,8 @@ if defined resfail (
 set error=1
 echo:
 call :dk_color %Red% "Checking Licensing Servers              [Failed to Connect]"
-set fixes=%fixes% licensing-servers-issue
-call :dk_color2 %Blue% "Help - " %_Yellow% " licensing-servers-issue"
+set fixes=%fixes% Usa licensing-servers-issue
+call :dk_color2 %Blue% "Help - " %_Yellow% " Usa licensing-servers-issue"
 )
 )
 
@@ -638,29 +638,42 @@ call :dk_color %Red% "Generating New IdentityCRL Registry     [Failed] [%_ident%
 
 reg query "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /v DisableWindowsUpdateAccess %nul2% | find /i "0x1" %nul% && set wublock=1
 reg query "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /v DoNotConnectToWindowsUpdateInternetLocations %nul2% | find /i "0x1" %nul% && set wublock=1
-if defined wublock call :dk_color %Red% "Checking Update Blocker In Registry     [Found]"
+if defined wublock (
+call :dk_color %Red% "Checking Update Blocker In Registry     [Found]"
+call :dk_color %Blue% "HWID activation needs working Windows updates, if you have used any tool to block updates, undo it."
+)
 
 reg query "HKLM\SOFTWARE\Policies\Microsoft\WindowsStore" /v DisableStoreApps %nul2% | find /i "0x1" %nul% && (
 set storeblock=1
 call :dk_color %Red% "Checking Store Blocker In Registry      [Found]"
+call :dk_color %Blue% "If you have used any tool to block Store, undo it."
 )
 
-for %%G in (DependOnService Description DisplayName ErrorControl ImagePath ObjectName Start Type ServiceSidType RequiredPrivileges FailureActions) do if not defined wucorrupt (
-reg query HKLM\SYSTEM\CurrentControlSet\Services\wuauserv /v %%G %nul% || set wucorrupt=1
+set wcount=0
+for %%G in (DependOnService Description DisplayName ErrorControl ImagePath ObjectName Start Type ServiceSidType RequiredPrivileges FailureActions) do (
+reg query HKLM\SYSTEM\CurrentControlSet\Services\wuauserv /v %%G %nul% || (set wucorrupt=1&set /a wcount+=1)
 )
 
-for %%G in (Parameters Security TriggerInfo) do if not defined wucorrupt (
-reg query HKLM\SYSTEM\CurrentControlSet\Services\wuauserv\%%G %nul% || set wucorrupt=1
+for %%G in (Parameters Security) do (
+reg query HKLM\SYSTEM\CurrentControlSet\Services\wuauserv\%%G %nul% || (set wucorrupt=1&set /a wcount+=1)
 )
 
 if defined wucorrupt (
 call :dk_color %Red% "Checking Windows Update Registry        [Corruption Found]"
+if !wcount! GTR 2 (
+call :dk_color %Red% "Windows seems to be infected with Mal%w%ware."
+set fixes=%fixes% remove_mal%w%ware
+call :dk_color2 %Blue% "Help - " %_Yellow% "remove_mal%w%ware"
+) else (
+call :dk_color %Blue% "HWID activation needs working Windows updates, if you have used any tool to block updates, undo it."
+)
 ) else (
 %psc% "Start-Job { Start-Service wuauserv } | Wait-Job -Timeout 20 | Out-Null"
 sc query wuauserv | find /i "RUNNING" %nul% || (
 set wuerror=1
 sc start wuauserv %nul%
 call :dk_color %Red% "Starting Windows Update Service         [Failed] [!errorlevel!]"
+call :dk_color %Blue% "HWID activation needs working Windows updates, if you have used any tool to block updates, undo it."
 )
 )
 
@@ -670,7 +683,7 @@ if not defined wucorrupt if not defined wublock if not defined wuerror if not de
 echo "%error_code%" | findstr /i "0x80072e 0x80072f 0x800704cf 0x87e10bcf 0x800705b4" %nul% && (
 call :dk_color %Red% "Checking Internet Issues                [Found] %error_code%"
 set fixes=%fixes% licensing-servers-issue
-call :dk_color2 %Blue% "Help - " %_Yellow% " licensing-servers-issue"
+call :dk_color2 %Blue% "Help - " %_Yellow% "licensing-servers-issue"
 )
 )
 )
@@ -688,7 +701,7 @@ call :dk_color %Blue% "Use KMS38 activation option instead."
 ) else (
 if not defined error call :dk_color %Blue% "%_fixmsg%"
 set fixes=%fixes% troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+call :dk_color2 %Blue% "Help - " %_Yellow% "troubleshoot"
 )
 )
 
@@ -1070,7 +1083,7 @@ if defined pupfound call :dk_color %Gray% "Checking PUP Activators              
 if defined results call :dk_color %Red% "Checking Probable Mal%w%ware Infection..."
 if defined results call :dk_color %Red% "%results%"
 set fixes=%fixes% remove_mal%w%ware
-call :dk_color2 %Blue% "Help - " %_Yellow% " remove_mal%w%ware"
+call :dk_color2 %Blue% "Help - " %_Yellow% "remove_mal%w%ware"
 echo:
 )
 
@@ -1188,6 +1201,11 @@ echo %serv_e% | findstr /i "ClipSVC-1058 sppsvc-1058" %nul% && (
 call :dk_color %Blue% "Reboot your machine using the restart option to fix this error."
 set showfix=1
 )
+echo %serv_e% | findstr /i "sppsvc-1060" %nul% && (
+set fixes=%fixes% fix_service
+call :dk_color2 %Blue% "Help - " %_Yellow% "fix_service"
+set showfix=1
+)
 )
 
 ::========================================================================================================================================
@@ -1214,7 +1232,7 @@ call :dk_color %Blue% "You need to run it in normal mode in case you are running
 )
 echo "%imagestate%" | find /i "UNDEPLOYABLE" %nul% && (
 set fixes=%fixes% in-place_repair_upgrade
-call :dk_color2 %Blue% "If the activation fails, do this - " %_Yellow% " in-place_repair_upgrade"
+call :dk_color2 %Blue% "If the activation fails, do this - " %_Yellow% "in-place_repair_upgrade"
 )
 )
 
@@ -1243,7 +1261,7 @@ reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v EditionID %nul2
 set error=1
 call :dk_color %Red% "Checking Eval Packages                  [Non-Eval Licenses are installed in Eval Windows]"
 set fixes=%fixes% evaluation_editions
-call :dk_color2 %Blue% "Help - " %_Yellow% " evaluation_editions"
+call :dk_color2 %Blue% "Help - " %_Yellow% "evaluation_editions"
 )
 )
 
@@ -1380,7 +1398,7 @@ set error=1
 reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform\Plugins\Objects\msft:rm/algorithm/hwid/4.0" /f ba02fed39662 /d %nul% || (
 call :dk_color %Red% "Checking SPP Registry Key               [Incorrect ModuleId Found]"
 set fixes=%fixes% issues_due_to_gaming_spoofers
-call :dk_color2 %Blue% "Most likely caused by HWID spoofers. Help - " %_Yellow% " issues_due_to_gaming_spoofers"
+call :dk_color2 %Blue% "Most likely caused by HWID spoofers. Help - " %_Yellow% "issues_due_to_gaming_spoofers"
 set error=1
 set showfix=1
 )
@@ -1395,7 +1413,7 @@ set error=1
 set showfix=1
 call :dk_color %Red% "Checking TokenStore Registry Key        [Correct Path Not Found] [%tokenstore%]"
 set fixes=%fixes% troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+call :dk_color2 %Blue% "Help - " %_Yellow% "troubleshoot"
 )
 
 
@@ -1611,7 +1629,7 @@ exit /b
 ::  2nd column = Generic Retail/OEM/MAK Key
 ::  3rd column = SKU ID
 ::  4th column = Key part number
-::  5th column = Ticket signature value. It's as it is, it's not encoded. (Check grave[.]dev/hwid#manual-activation to see how it's generated)
+::  5th column = Ticket signature value. It's as it is, it's not encoded.
 ::  6th column = 1 = activation is not working (at the time of writing this), 0 = activation is working
 ::  7th column = Key Type
 ::  8th column = WMI Edition ID (For reference only)
