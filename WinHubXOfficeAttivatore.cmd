@@ -4,7 +4,8 @@
 
 ::============================================================================
 ::
-
+::   
+::    
 ::
 ::============================================================================
 
@@ -42,26 +43,28 @@ set "Path=%SystemRoot%\Sysnative;%SystemRoot%;%SystemRoot%\Sysnative\Wbem;%Syste
 set "ComSpec=%SysPath%\cmd.exe"
 set "PSModulePath=%ProgramFiles%\WindowsPowerShell\Modules;%SysPath%\WindowsPowerShell\v1.0\Modules"
 
+set re1=
+set re2=
 set "_cmdf=%~f0"
 for %%# in (%*) do (
-if /i "%%#"=="r1" set r1=1
-if /i "%%#"=="r2" set r2=1
+if /i "%%#"=="re1" set re1=1
+if /i "%%#"=="re2" set re2=1
 )
 
 :: Re-launch the script with x64 process if it was initiated by x86 process on x64 bit Windows
 :: or with ARM64 process if it was initiated by x86/ARM32 process on ARM64 Windows
 
-if exist %SystemRoot%\Sysnative\cmd.exe if not defined r1 (
+if exist %SystemRoot%\Sysnative\cmd.exe if not defined re1 (
 setlocal EnableDelayedExpansion
-start %SystemRoot%\Sysnative\cmd.exe /c ""!_cmdf!" %* r1"
+start %SystemRoot%\Sysnative\cmd.exe /c ""!_cmdf!" %* re1"
 exit /b
 )
 
 :: Re-launch the script with ARM32 process if it was initiated by x64 process on ARM64 Windows
 
-if exist %SystemRoot%\SysArm32\cmd.exe if %PROCESSOR_ARCHITECTURE%==AMD64 if not defined r2 (
+if exist %SystemRoot%\SysArm32\cmd.exe if %PROCESSOR_ARCHITECTURE%==AMD64 if not defined re2 (
 setlocal EnableDelayedExpansion
-start %SystemRoot%\SysArm32\cmd.exe /c ""!_cmdf!" %* r2"
+start %SystemRoot%\SysArm32\cmd.exe /c ""!_cmdf!" %* re2"
 exit /b
 )
 
@@ -96,6 +99,7 @@ set "nul="
 
 set "blank="
 
+
 ::  Check if Null service is working, it's important for the batch script
 
 sc query Null | find /i "RUNNING"
@@ -104,12 +108,13 @@ echo:
 echo Null service is not running, script may crash...
 echo:
 echo:
-echo Help - troubleshoot
+echo Help - Usa fix_service
 echo:
 echo:
 ping 127.0.0.1 -n 20
 )
 cls
+
 
 ::========================================================================================================================================
 
@@ -123,6 +128,8 @@ set _unattended=0
 
 set _args=%*
 if defined _args set _args=%_args:"=%
+if defined _args set _args=%_args:re1=%
+if defined _args set _args=%_args:re2=%
 if defined _args (
 for %%A in (%_args%) do (
 if /i "%%A"=="/Ohook"                  set _act=1
@@ -180,20 +187,25 @@ goto dk_done
 
 ::  Check PowerShell
 
-REM :PowerShellTest: $ExecutionContext.SessionState.LanguageMode :PowerShellTest:
+REM :PStest: $ExecutionContext.SessionState.LanguageMode :PStest:
 
-cmd /c "%psc% "$f=[io.file]::ReadAllText('!_batp!') -split ':PowerShellTest:\s*';iex ($f[1])"" | find /i "FullLanguage" %nul1% || (
+cmd /c "%psc% "$f=[io.file]::ReadAllText('!_batp!') -split ':PStest:\s*';iex ($f[1])"" | find /i "FullLanguage" %nul1% || (
 %eline%
 cmd /c "%psc% "$ExecutionContext.SessionState.LanguageMode""
 echo:
 cmd /c "%psc% "$ExecutionContext.SessionState.LanguageMode"" | find /i "FullLanguage" %nul1% && (
 echo Failed to run Powershell command but Powershell is working.
-call :dk_color %Blue% "Check if your antivirus is blocking the script."
 echo:
+cmd /c "%psc% ""$av = Get-WmiObject -Namespace root\SecurityCenter2 -Class AntiVirusProduct; $n = @(); foreach ($i in $av) { if ($i.displayName -notlike '*windows*') { $n += $i.displayName } }; if ($n) { Write-Host ('Installed 3rd party Antivirus might be blocking the script - ' + ($n -join ', ')) -ForegroundColor White -BackgroundColor Blue }"""
+echo:
+set fixes=%fixes% troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
 ) || (
 echo PowerShell is not working. Aborting...
 echo If you have applied restrictions on Powershell then undo those changes.
 echo:
+set fixes=%fixes% fix_powershell
+call :dk_color2 %Blue% "Help - " %_Yellow% " fix_powershell"
 )
 goto dk_done
 )
@@ -232,6 +244,7 @@ if defined terminal (
 %psc% "%d2%" %nul2% | find /i "True" %nul1% && set terminal=
 )
 
+if defined ps32onArm goto :skipQE
 if %_unattended%==1 goto :skipQE
 for %%# in (%_args%) do (if /i "%%#"=="-qedit" goto :skipQE)
 
@@ -251,9 +264,6 @@ set "d4=$k=$t.CreateType(); $b=$k::SetConsoleMode($k::GetStdHandle(-10), 0x0080)
 %launchcmd% "%d1% %d2% %d3% %d4% & cmd.exe '/c' '!_PSarg! -qedit'" && (exit /b) || (set terminal=1)
 :skipQE
 
-::========================================================================================================================================
-
-cls
 
 ::========================================================================================================================================
 
@@ -265,6 +275,12 @@ if %_unattended%==0 (
 cls
 if not defined terminal mode 76, 25
 title  WinHubX Attivatore Office
+call :oh_checkapps
+echo:
+echo:
+echo:
+echo:
+if defined checknames (call :dk_color %_Yellow% "                Close [!checknames!] before proceeding...")
 goto :oh_menu2
 )
 
@@ -276,7 +292,7 @@ cls
 if not defined terminal (
 mode 130, 32
 if exist "%SysPath%\spp\store_test\" mode 134, 32
-%psc% "&{$W=$Host.UI.RawUI.WindowSize;$B=$Host.UI.RawUI.BufferSize;$W.Height=32;$B.Height=300;$Host.UI.RawUI.WindowSize=$W;$Host.UI.RawUI.BufferSize=$B;}"
+%psc% "&{$W=$Host.UI.RawUI.WindowSize;$B=$Host.UI.RawUI.BufferSize;$W.Height=32;$B.Height=300;$Host.UI.RawUI.WindowSize=$W;$Host.UI.RawUI.BufferSize=$B;}" %nul%
 )
 title  WinHubX Attivatore Office
 
@@ -288,6 +304,8 @@ if not exist %SysPath%\sppsvc.exe (
 %eline%
 echo [%SysPath%\sppsvc.exe] file is missing, aborting...
 echo:
+set fixes=%fixes% troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
 goto dk_done
 )
 
@@ -334,11 +352,14 @@ for /f "skip=2 tokens=2*" %%a in ('"reg query %_68%\14.0\Common\InstallRoot /v P
 %nul% reg query %_68%\14.0\CVH /f Click2run /k         && set o14c2r=Office 2010 C2R 
 %nul% reg query %_86%\14.0\CVH /f Click2run /k         && set o14c2r=Office 2010 C2R 
 
-if %winbuild% GEQ 10240 %psc% "Get-AppxPackage -name "Microsoft.Office.Desktop"" | find /i "Office" %nul1% && set o16uwp=Office UWP 
+if %winbuild% GEQ 10240 (
+for /f "delims=" %%a in ('%psc% "(Get-AppxPackage -name 'Microsoft.Office.Desktop' | Select-Object -ExpandProperty InstallLocation)" %nul6%') do (if exist "%%a\Integration\Integrator.exe" set o16uwp=Office UWP )
+)
 
 if not "%o14msi%%o14c2r%%o16uwp%"=="" (
 echo:
 call :dk_color %Red% "Checking Unsupported Office Install     [ %o14msi%%o14c2r%%o16uwp%]"
+if not "%o14msi%%o16uwp%"=="" call :dk_color %Blue% "Use Online KMS option to activate it."
 )
 
 if %winbuild% GEQ 10240 %psc% "Get-AppxPackage -name "Microsoft.MicrosoftOfficeHub"" | find /i "Office" %nul1% && (
@@ -385,6 +406,8 @@ echo You only have the Office dashboard app installed, you need to install the f
 echo:
 call :dk_color %Blue% "Download and install Office from the below URL and then try again."
 echo:
+set fixes=%fixes% genuine-installation-media
+call :dk_color %_Yellow% "genuine-installation-media"
 goto dk_done
 )
 
@@ -528,6 +551,7 @@ call :dk_color %Gray% "Checking Old Office With Sub License    [Found. Update Of
 
 ::========================================================================================================================================
 
+::  
 ::  Add registry keys for volume products so that 'non-genuine' banner won't appear 
 ::  Script already is using MAK instead of GVLK so it won't appear anyway, but registry keys are added incase Office installs default GVLK grace key for volume products
 
@@ -561,13 +585,15 @@ call :oh_licrefresh
 
 echo:
 if not defined error (
-call :dk_color %Green% "Office attivato permanentemente."
+call :dk_color %Green% "Office is permanently activated."
 if defined ohub call :dk_color %Gray% "Office apps such as Word, Excel are activated, use them directly. Ignore 'Buy' button in Office dashboard app."
-echo troubleshoot
+echo Help: troubleshoot
 ) else (
 call :dk_color %Red% "Some errors were detected."
 if not defined ierror if not defined showfix if not defined serv_cor if not defined serv_cste call :dk_color %Blue% "%_fixmsg%"
 echo:
+set fixes=%fixes% troubleshoot
+call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
 )
 
 goto :dk_done
@@ -623,7 +649,12 @@ reg load HKU\DEF_TEMP %SystemDrive%\Users\Default\NTUSER.DAT %nul%
 reg query HKU\DEF_TEMP\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency %nul% && reg delete HKU\DEF_TEMP\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /f
 reg unload HKU\DEF_TEMP %nul%
 
-for /f "tokens=* delims=" %%a in ('%psc% "$p = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'; Get-ChildItem $p | ForEach-Object { $pi = (Get-ItemProperty $('{0}\{1}' -f $p, $_.PSChildName)).ProfileImagePath; if ($pi -like $('{0}\Users\*' -f $Env:SystemDrive)) { Split-Path $_.PSPath -Leaf } }" %nul6%') do (if defined _sidlist (set _sidlist=!_sidlist! %%a) else (set _sidlist=%%a))
+set _sidlist=
+for /f "tokens=* delims=" %%a in ('%psc% "$p = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'; Get-ChildItem $p | ForEach-Object { $pi = (Get-ItemProperty """"$p\$($_.PSChildName)"""").ProfileImagePath; if ($pi -like '*\Users\*' -and (Test-Path """"$pi\NTUSER.DAT"""") -and -not ($_.PSChildName -match '\.bak$')) { Split-Path $_.PSPath -Leaf } }" %nul6%') do (if defined _sidlist (set _sidlist=!_sidlist! %%a) else (set _sidlist=%%a))
+
+if not defined _sidlist (
+for /f "delims=" %%a in ('%psc% "$explorerProc = Get-Process -Name explorer | Where-Object {$_.SessionId -eq (Get-Process -Id $pid).SessionId} | Select-Object -First 1; $sid = (gwmi -Query ('Select * From Win32_Process Where ProcessID=' + $explorerProc.Id)).GetOwnerSid().Sid; $sid" %nul6%') do (set _sidlist=%%a)
+)
 
 for %%# in (!_sidlist!) do (
 
@@ -758,14 +789,15 @@ exit /b
 
 if not defined _oLPath exit /b
 
+if defined _oIntegrator (
 if %oVer%==16 (
 "!_oIntegrator!" /I /License PRIDName=%_License%.16 PidKey=%key% %nul%
 ) else (
 "!_oIntegrator!" /I /License PRIDName=%_License% PidKey=%key% %nul%
 )
-
 call :dk_actids 0ff1ce15-a989-479d-af46-f275c6370663
 echo "!allapps!" | find /i "!_actid!" %nul1% && exit /b
+)
 
 ::  Fallback to manual method to install licenses incase integrator.exe is not working
 
@@ -901,6 +933,9 @@ call :dk_inskey "[!key!] [!_prod!] [!_lic!]"
 ) else (
 set error=1
 call :dk_color %Red% "Checking Product In Script              [Office %oVer%.0 !_prod! not found in script]"
+call :dk_color %Blue% "Make sure you are using the latest version."
+set fixes=%fixes% 
+call :dk_color %_Yellow% ""
 )
 )
 )
@@ -1022,19 +1057,10 @@ set _sortIds=!_sortIds:PreInstallR_=Retail_!
 ::  https://learn.microsoft.com/office/troubleshoot/activation/reset-office-365-proplus-activation-state
 
 set _sidlist=
-for /f "tokens=* delims=" %%a in ('%psc% "$p = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'; Get-ChildItem $p | ForEach-Object { $pi = (Get-ItemProperty """"$p\$($_.PSChildName)"""").ProfileImagePath; if ($pi -like """"$Env:SystemDrive\Users\*"""" -and (Test-Path """"$pi\NTUSER.DAT"""") -and -not ($_ -match '\.bak$')) { Split-Path $_.PSPath -Leaf } }" %nul6%') do (if defined _sidlist (set _sidlist=!_sidlist! %%a) else (set _sidlist=%%a))
+for /f "tokens=* delims=" %%a in ('%psc% "$p = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'; Get-ChildItem $p | ForEach-Object { $pi = (Get-ItemProperty """"$p\$($_.PSChildName)"""").ProfileImagePath; if ($pi -like '*\Users\*' -and (Test-Path """"$pi\NTUSER.DAT"""") -and -not ($_.PSChildName -match '\.bak$')) { Split-Path $_.PSPath -Leaf } }" %nul6%') do (if defined _sidlist (set _sidlist=!_sidlist! %%a) else (set _sidlist=%%a))
 
 if not defined _sidlist (
-set error=1
-call :dk_color %Red% "Checking User Accounts SID              [Not Found]"
-exit /b
-)
-
-set /a counter=0
-for %%# in (%_sidlist%) do set /a counter+=1
-
-if %counter% GTR 10 (
-call :dk_color %Gray% "Checking Total User Accounts            [%counter%]"
+for /f "delims=" %%a in ('%psc% "$explorerProc = Get-Process -Name explorer | Where-Object {$_.SessionId -eq (Get-Process -Id $pid).SessionId} | Select-Object -First 1; $sid = (gwmi -Query ('Select * From Win32_Process Where ProcessID=' + $explorerProc.Id)).GetOwnerSid().Sid; $sid" %nul6%') do (set _sidlist=%%a)
 )
 
 ::==========================
@@ -1042,19 +1068,38 @@ call :dk_color %Gray% "Checking Total User Accounts            [%counter%]"
 ::  Load the unloaded useraccounts registry
 
 set loadedsids=
-set failedtoload=
-set failedtounload=
+set alrloadedsids=
+
 for %%# in (%_sidlist%) do (
-reg query HKU\%%#\Software %nul% || (
+reg query HKU\%%#\Software %nul% && (
+call set "alrloadedsids=%%alrloadedsids%% %%#"
+) || (
 for /f "skip=2 tokens=2*" %%a in ('"reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\%%#" /v ProfileImagePath" %nul6%') do (
 reg load HKU\%%# "%%b\NTUSER.DAT" %nul%
 reg query HKU\%%#\Software %nul% && (
 call set "loadedsids=%%loadedsids%% %%#"
 ) || (
-set failedtoload=1
+reg unload HKU\%%# %nul%
 )
 )
 )
+)
+
+::==========================
+
+set "_sidlist=%loadedsids% %alrloadedsids%"
+
+set /a counter=0
+for %%# in (%_sidlist%) do set /a counter+=1
+
+if %counter% EQU 0 (
+set error=1
+call :dk_color %Red% "Checking User Accounts SID              [Not Found]"
+exit /b
+)
+
+if %counter% GTR 10 (
+call :dk_color %Gray% "Checking Total User Accounts            [%counter%]"
 )
 
 ::==========================
@@ -1066,7 +1111,6 @@ rmdir /s /q "%ProgramData%\Microsoft\Office\Licenses\" %nul%
 for %%x in (15 16) do (
 for %%# in (%_sidlist%) do (
 reg delete HKU\%%#\Software\Microsoft\Office\%%x.0\Common\Licensing /f %nul%
-reg delete HKU\%%#\Software\Microsoft\Office\%%x.0\Common\Identity /f %nul%
 
 for /f "skip=2 tokens=2*" %%a in ('"reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\%%#" /v ProfileImagePath" %nul6%') do (
 rmdir /s /q "%%b\AppData\Local\Microsoft\Office\Licenses\" %nul%
@@ -1077,6 +1121,22 @@ reg delete "HKLM\SOFTWARE\Microsoft\Office\%%x.0\Common\Licensing" /f %nul%
 reg delete "HKLM\SOFTWARE\Microsoft\Office\%%x.0\Common\Licensing" /f /reg:32 %nul%
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Office\%%x.0\Common\Licensing" /f %nul%
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Office\%%x.0\Common\Licensing" /f /reg:32 %nul%
+)
+
+::  Clear vNext in UWP Office
+
+if defined o16uwpapplist (
+for %%# in (%_sidlist%) do (
+for /f "skip=2 tokens=2*" %%a in ('"reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\%%#" /v ProfileImagePath" %nul6%') do (
+rmdir /s /q "%%b\AppData\Local\Packages\Microsoft.Office.Desktop_8wekyb3d8bbwe\LocalCache\Local\Microsoft\Office\Licenses\" %nul%
+if exist "%%b\AppData\Local\Packages\Microsoft.Office.Desktop_8wekyb3d8bbwe\SystemAppData\Helium\User.dat" (
+set defname=DEFTEMP-%%#
+reg load HKU\!defname! "%%b\AppData\Local\Packages\Microsoft.Office.Desktop_8wekyb3d8bbwe\SystemAppData\Helium\User.dat" %nul%
+reg delete HKU\!defname!\Software\Microsoft\Office\16.0\Common\Licensing /f %nul%
+reg unload HKU\!defname! %nul%
+)
+)
+)
 )
 
 ::  Clear SharedComputerLicensing for office
@@ -1113,18 +1173,23 @@ echo Clearing Office License Blocks          [Successfully cleared from all %cou
 ::  Some retail products attempt to validate the license and may show a banner "There was a problem checking this device's license status."
 ::  Resiliency registry entry can skip this check
 
+set defname=DEFTEMP-%random%
+for /f "skip=2 tokens=2*" %%a in ('"reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" /v Default" %nul6%') do call set "defdat=%%b"
+
 if defined o16c2r if defined officeact (
-reg load HKU\DEF_TEMP %SystemDrive%\Users\Default\NTUSER.DAT %nul%
-reg query HKU\DEF_TEMP %nul% || set failedtoload=1
-reg add HKU\DEF_TEMP\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /v "TimeOfLastHeartbeatFailure" /t REG_SZ /d "2040-01-01T00:00:00Z" /f %nul%
-reg unload HKU\DEF_TEMP %nul%
-reg query HKU\DEF_TEMP %nul% && set failedtounload=1
+if exist "%defdat%\NTUSER.DAT" (
+reg load HKU\%defname% "%defdat%\NTUSER.DAT" %nul%
+reg query HKU\%defname%\Software %nul% && (
+reg add HKU\%defname%\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /v "TimeOfLastHeartbeatFailure" /t REG_SZ /d "2040-01-01T00:00:00Z" /f %nul%
+)
+reg unload HKU\%defname% %nul%
+)
 
 for %%# in (%_sidlist%) do (
 reg delete HKU\%%#\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /f %nul%
 reg add HKU\%%#\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /v "TimeOfLastHeartbeatFailure" /t REG_SZ /d "2040-01-01T00:00:00Z" /f %nul%
 )
-echo Adding Reg Keys to Skip License Check   [Successfully added to all %counter% ^& future new user accounts]
+echo Adding Registry to Skip License Check   [Successfully added to all %counter% ^& future new user accounts]
 )
 
 ::==========================
@@ -1133,19 +1198,6 @@ echo Adding Reg Keys to Skip License Check   [Successfully added to all %counter
 
 for %%# in (%loadedsids%) do (
 reg unload HKU\%%# %nul%
-reg query HKU\%%# %nul% && set failedtounload=1
-)
-
-if defined failedtoload (
-set error=1
-call :dk_color %Red% "Loading Unloaded Accounts Registry      [Failed for some user accounts]"
-call :dk_color %Blue% "Reboot your machine using the restart option and try again."
-)
-
-if defined failedtounload (
-set error=1
-call :dk_color %Red% "Unloading Loaded Account Registries     [Failed for some user accounts]"
-call :dk_color %Blue% "Reboot your machine using the restart option and try again."
 )
 
 exit /b
@@ -1242,12 +1294,15 @@ set _NCS=1
 if %winbuild% LSS 10586 set _NCS=0
 if %winbuild% GEQ 10586 reg query "HKCU\Console" /v ForceV2 %nul2% | find /i "0x0" %nul1% && (set _NCS=0)
 
+echo "%PROCESSOR_ARCHITECTURE% %PROCESSOR_ARCHITEW6432%" | find /i "ARM64" %nul1% && (if %winbuild% LSS 21277 set ps32onArm=1)
+
 if %_NCS% EQU 1 (
 for /F %%a in ('echo prompt $E ^| cmd') do set "esc=%%a"
 set     "Red="41;97m""
 set    "Gray="100;97m""
 set   "Green="42;97m""
 set    "Blue="44;97m""
+set   "White="107;91m""
 set    "_Red="40;91m""
 set  "_White="40;37m""
 set  "_Green="40;92m""
@@ -1257,6 +1312,7 @@ set     "Red="Red" "white""
 set    "Gray="Darkgray" "white""
 set   "Green="DarkGreen" "white""
 set    "Blue="Blue" "white""
+set   "White="White" "Red""
 set    "_Red="Black" "Red""
 set  "_White="Black" "Gray""
 set  "_Green="Black" "Green""
@@ -1270,7 +1326,7 @@ set "_exitmsg=Go back"
 set "_fixmsg=Go back to Main Menu, select Troubleshoot and run Fix Licensing option."
 ) else (
 set "_exitmsg=Exit"
-set "_fixmsg=Troubleshoot script and select Fix Licensing option."
+set "_fixmsg=Run Troubleshoot script and select Fix Licensing option."
 )
 exit /b
 
@@ -1333,6 +1389,22 @@ set allapps=
 if %_wmic% EQU 1 set "chkapp=for /f "tokens=2 delims==" %%a in ('"wmic path %spp% where (ApplicationID='%1') get ID /VALUE" %nul6%')"
 if %_wmic% EQU 0 set "chkapp=for /f "tokens=2 delims==" %%a in ('%psc% "(([WMISEARCHER]'SELECT ID FROM %spp% WHERE ApplicationID=''%1''').Get()).ID ^| %% {echo ('ID='+$_)}" %nul6%')"
 %chkapp% do (if defined allapps (call set "allapps=!allapps! %%a") else (call set "allapps=%%a"))
+
+::  Check potential script crash issue when user manually installs way too many licenses for Office (length limit in variable)
+
+if defined allapps if %1==0ff1ce15-a989-479d-af46-f275c6370663 (
+set len=0
+echo:!allapps!> %SystemRoot%\Temp\chklen
+for %%A in (%SystemRoot%\Temp\chklen) do (set len=%%~zA)
+del %SystemRoot%\Temp\chklen %nul%
+
+if !len! GTR 6000 (
+%eline%
+echo Too many licenses are installed, the script may crash.
+call :dk_color %Blue% "%_fixmsg%"
+timeout /t 30
+)
+)
 exit /b
 
 ::  Get installed products Activation IDs
@@ -1393,7 +1465,7 @@ echo sc start sppsvc [Error Code: %spperror%]
 )
 
 echo:
-%psc% "$job = Start-Job { (Get-WmiObject -Query 'SELECT * FROM %sps%').Version }; if (-not (Wait-Job $job -Timeout 20)) {write-host 'sppsvc is not working correctly. Help - troubleshoot'}"
+%psc% "$job = Start-Job { (Get-WmiObject -Query 'SELECT * FROM %sps%').Version }; if (-not (Wait-Job $job -Timeout 30)) {write-host 'sppsvc is not working correctly. Help - troubleshoot'}"
 exit /b
 
 ::  Get Product name (WMI/REG methods are not reliable in all conditions, hence winbrand.dll method is used)
@@ -1431,25 +1503,15 @@ exit /b
 
 set w=
 set results=
-if exist "%ProgramFiles%\KM%w%Spico" set pupfound1= KM%w%Spico 
-if exist "%SysPath%\Tasks\R@1n-KMS"  set pupfound2= R@inKMS 
-reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\taskcache\tasks" /f Path /s | find /i "AutoPico" %nul% && set pupfound1= KM%w%Spico 
-reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\taskcache\tasks" /f Path /s | find /i "R@1n" %nul% && set pupfound2= R@inKMS 
-set pupfound=%pupfound1%%pupfound2%
+if exist "%ProgramFiles%\KM%w%Spico" set pupfound= KM%w%Spico 
+if not defined pupfound (
+reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\taskcache\tasks" /f Path /s | find /i "AutoPico" %nul% && set pupfound= KM%w%Spico 
+)
 
 set hcount=0
 for %%# in (avira.com kaspersky.com virustotal.com mcafee.com) do (
 find /i "%%#" %SysPath%\drivers\etc\hosts %nul% && set /a hcount+=1)
 if %hcount%==4 set "results=[Antivirus URLs are blocked in hosts]"
-
-set wucount=0
-for %%# in (wuauserv) do (
-set _corrupt=
-for %%G in (DependOnService Description DisplayName ErrorControl ImagePath ObjectName Start Type) do if not defined _corrupt (
-reg query HKLM\SYSTEM\CurrentControlSet\Services\%%# /v %%G %nul% || (set _corrupt=1 & set /a wucount+=1)
-)
-)
-if %wucount% GEQ 1 set "results=%results%[Windows Update registry is corrupt]"
 
 sc start sppsvc %nul%
 echo "%errorlevel%" | findstr "577 225" %nul% && (
@@ -1466,6 +1528,13 @@ set fixes=%fixes% remove_mal%w%ware
 call :dk_color2 %Blue% "Help - " %_Yellow% " remove_mal%w%ware"
 echo:
 )
+
+::  Remove the scheduled task of R@1n-KMS (old version) that runs the activation command every minute, as it leads to high CPU usage.
+
+if exist %SysPath%\Tasks\R@1n-KMS (
+for /f %%A in ('dir /b /a:-d %SysPath%\Tasks\R@1n-KMS %nul6%') do (schtasks /delete /tn \R@1n-KMS\%%A /f %nul%)
+)
+
 exit /b
 
 ::========================================================================================================================================
@@ -1557,7 +1626,7 @@ set errorcode=
 set checkerror=
 
 sc query %%# | find /i "RUNNING" %nul% || (
-%psc% "Start-Job { Start-Service %%# } | Wait-Job -Timeout 10 | Out-Null"
+%psc% "Start-Job { Start-Service %%# } | Wait-Job -Timeout 20 | Out-Null"
 set errorcode=!errorlevel!
 sc query %%# | find /i "RUNNING" %nul% || set checkerror=1
 )
@@ -1574,6 +1643,11 @@ echo %serv_e% | findstr /i "ClipSVC-1058 sppsvc-1058" %nul% && (
 call :dk_color %Blue% "Reboot your machine using the restart option to fix this error."
 set showfix=1
 )
+echo %serv_e% | findstr /i "sppsvc-1060" %nul% && (
+set fixes=%fixes% fix_service
+call :dk_color2 %Blue% "Help - " %_Yellow% " fix_service"
+set showfix=1
+)
 )
 
 ::========================================================================================================================================
@@ -1587,13 +1661,20 @@ call :dk_color2 %Red% "Checking Boot Mode                      [%safeboot_option
 )
 
 
+::  https://learn.microsoft.com/windows-hardware/manufacture/desktop/windows-setup-states
+
 for /f "skip=2 tokens=2*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State" /v ImageState') do (set imagestate=%%B)
+
 if /i not "%imagestate%"=="IMAGE_STATE_COMPLETE" (
 set error=1
-call :dk_color %Red% "Checking Windows Setup State            [%imagestate%]"
-echo "%imagestate%" | find /i "RESEAL" %nul% && (
 set showfix=1
+call :dk_color %Gray% "Checking Windows Setup State            [%imagestate%]"
+echo "%imagestate%" | find /i "RESEAL" %nul% && (
 call :dk_color %Blue% "You need to run it in normal mode in case you are running it in Audit Mode."
+)
+echo "%imagestate%" | find /i "UNDEPLOYABLE" %nul% && (
+set fixes=%fixes% in-place_repair_upgrade
+call :dk_color2 %Blue% "If the activation fails, do this - " %_Yellow% " in-place_repair_upgrade"
 )
 )
 
@@ -1621,12 +1702,18 @@ if not defined officeact if exist "%SystemRoot%\Servicing\Packages\Microsoft-Win
 reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v EditionID %nul2% | find /i "Eval" %nul1% || (
 set error=1
 call :dk_color %Red% "Checking Eval Packages                  [Non-Eval Licenses are installed in Eval Windows]"
+set fixes=%fixes% evaluation_editions
+call :dk_color2 %Blue% "Help - " %_Yellow% " evaluation_editions"
 )
 )
 
 
 set osedition=0
-for /f "skip=2 tokens=3" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v EditionID %nul6%') do set "osedition=%%a"
+if %_wmic% EQU 1 set "chkedi=for /f "tokens=2 delims==" %%a in ('"wmic path %spp% where (ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND LicenseDependsOn is NULL AND PartialProductKey IS NOT NULL) get LicenseFamily /VALUE" %nul6%')"
+if %_wmic% EQU 0 set "chkedi=for /f "tokens=2 delims==" %%a in ('%psc% "(([WMISEARCHER]'SELECT LicenseFamily FROM %spp% WHERE ApplicationID=''55c92734-d682-4d71-983e-d6ec3f16059f'' AND LicenseDependsOn is NULL AND PartialProductKey IS NOT NULL').Get()).LicenseFamily ^| %% {echo ('LicenseFamily='+$_)}" %nul6%')"
+%chkedi% do if not errorlevel 1 (call set "osedition=%%a")
+
+if %osedition%==0 for /f "skip=2 tokens=3" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v EditionID %nul6%') do set "osedition=%%a"
 
 ::  Workaround for an issue in builds between 1607 and 1709 where ProfessionalEducation is shown as Professional
 
@@ -1669,7 +1756,7 @@ if %_wmic% EQU 1 wmic path Win32_ComputerSystem get CreationClassName /value %nu
 if %_wmic% EQU 0 %psc% "Get-WmiObject -Class Win32_ComputerSystem | Select-Object -Property CreationClassName" %nul2% | find /i "computersystem" %nul1%
 
 if %errorlevel% NEQ 0 set wmifailed=1
-echo "%error_code%" | findstr /i "0x800410 0x800440" %nul1% && set wmifailed=1& ::  https://learn.microsoft.com/en-us/windows/win32/wmisdk/wmi-error-constants
+echo "%error_code%" | findstr /i "0x800410 0x800440 0x80131501" %nul1% && set wmifailed=1& ::  https://learn.microsoft.com/en-us/windows/win32/wmisdk/wmi-error-constants
 if defined wmifailed (
 set error=1
 call :dk_color %Red% "Checking WMI                            [Not Working]"
@@ -1711,17 +1798,20 @@ call :dk_color2 %Red% "Checking ClipSVC                        " %Blue% "[System
 ::  This "WLMS" service was included in previous Eval editions (which were activable) to automatically shut down the system every hour after the evaluation period expired and prevent SPPSVC from stopping.
 
 if exist "%SysPath%\wlms\wlms.exe" (
-sc query wlms | find /i "RUNNING" %nul% && (
+if %winbuild% LSS 9200 (
 echo Checking Eval WLMS Service              [Found]
+) else (
+call :dk_color %Red% "Checking Eval WLMS Service              [Found]"
 )
 )
 
 
 reg query "HKU\S-1-5-20\Software\Microsoft\Windows NT\CurrentVersion" %nul% || (
 set error=1
+set showfix=1
 call :dk_color %Red% "Checking HKU\S-1-5-20 Registry          [Not Found]"
-set fixes=troubleshoot
-call :dk_color2 %Blue% "Help - " %_Yellow% " troubleshoot"
+set fixes=%fixes% in-place_repair_upgrade
+call :dk_color2 %Blue% "In case of activation issues, do this - " %_Yellow% " in-place_repair_upgrade"
 )
 
 
@@ -1742,7 +1832,7 @@ echo Checking SPP In IFEO                    [%_sppint%]
 for /f "skip=2 tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform" /v "SkipRearm" %nul6%') do if /i %%b NEQ 0x0 (
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform" /v "SkipRearm" /t REG_DWORD /d "0" /f %nul%
 call :dk_color %Red% "Checking SkipRearm                      [Default 0 Value Not Found. Changing To 0]"
-%psc% "Start-Job { Stop-Service sppsvc -force } | Wait-Job -Timeout 10 | Out-Null"
+%psc% "Start-Job { Stop-Service sppsvc -force } | Wait-Job -Timeout 20 | Out-Null"
 set error=1
 )
 
@@ -1791,7 +1881,7 @@ set showfix=1
 
 call :dk_actid 55c92734-d682-4d71-983e-d6ec3f16059f
 if not defined apps (
-%psc% "Start-Job { Stop-Service sppsvc -force } | Wait-Job -Timeout 10 | Out-Null; $sls = Get-WmiObject SoftwareLicensingService; $f=[io.file]::ReadAllText('!_batp!') -split ':xrm\:.*';iex ($f[1]); ReinstallLicenses" %nul%
+%psc% "Start-Job { Stop-Service sppsvc -force } | Wait-Job -Timeout 20 | Out-Null; $sls = Get-WmiObject SoftwareLicensingService; $f=[io.file]::ReadAllText('!_batp!') -split ':xrm\:.*';iex ($f[1]); ReinstallLicenses" %nul%
 call :dk_actid 55c92734-d682-4d71-983e-d6ec3f16059f
 if not defined apps (
 set "_notfoundids=Key Not Installed / Act ID Not Found"
@@ -1816,6 +1906,7 @@ for /f "delims=" %%a in ('%psc% "(Get-ScheduledTask -TaskName 'SvcRestartTask' -
 echo !taskinfo! | find /i "Ready" %nul% || (
 reg delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform" /v "actionlist" /f %nul%
 reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\Microsoft\Windows\SoftwareProtectionPlatform\SvcRestartTask" %nul% || set taskinfo=Removed
+if "!taskinfo!"=="" set "taskinfo=Not Found"
 call :dk_color %Red% "Checking SvcRestartTask Status          [!taskinfo!, System might deactivate later]"
 )
 )
@@ -1824,7 +1915,7 @@ call :dk_color %Red% "Checking SvcRestartTask Status          [!taskinfo!, Syste
 ::  This code checks if SPP has permission access to tokens folder and required registry keys. It's often caused by gaming spoofers.
 
 set permerror=
-if %winbuild% GEQ 9200 (
+if %winbuild% GEQ 9200 if not defined ps32onArm (
 for %%# in (
 "%tokenstore%+FullControl"
 "HKLM:\SYSTEM\WPA+QueryValues, EnumerateSubKeys, WriteKey"
@@ -1958,7 +2049,8 @@ echo:
 if %_unattended%==1 timeout /t 2 & exit /b
 
 if defined fixes (
-call :dk_color2 %Blue% "Press [1] to Open Troubleshoot Page " %Gray% " Press [0] to Ignore"
+call :dk_color %White% "Follow ALL the ABOVE blue lines.   "
+call :dk_color2 %Blue% "Press [1] to Open Support Webpage " %Gray% " Press [0] to Ignore"
 choice /C:10 /N
 if !errorlevel!==1 (for %%# in (%fixes%) do (start %%#))
 )
@@ -2033,16 +2125,16 @@ for %%# in (
 15_191509f2-6977-456f-ab30-cf0492b1e93a_NB77V-RPFQ6-PMMKQ-T87DV-M4%f%D84_Retail________WordRetail
 15_9cedef15-be37-4ff0-a08a-13a045540641_RPHPB-Y7NC4-3VYFM-DW7VD-G8%f%YJ8_MAK___________WordVolume
 :: Office 365 - 15.0 version
-15_6337137e-7c07-4197-8986-bece6a76fc33_2P3C9-BQNJH-VCVPH-YDY6M-43%f%JPQ_Subscription__O365BusinessRetail
-15_537ea5b5-7d50-4876-bd38-a53a77caca32_J2W28-TN9C8-26PWV-F7J4G-72%f%XCB_Subscription1_O365HomePremRetail
-15_149dbce7-a48e-44db-8364-a53386cd4580_2N382-D6PKK-QTX4D-2JJYK-M9%f%6P2_Subscription1_O365ProPlusRetail
-15_bacd4614-5bef-4a5e-bafc-de4c788037a2_HN8JP-87TQJ-PBF3P-Y66KC-W2%f%K9V_Subscription1_O365SmallBusPremRetail
+15_742178ed-6b28-42dd-b3d7-b7c0ea78741b_Y9NF9-M2QWD-FF6RJ-QJW36-RR%f%F2T_SubTest_______O365BusinessRetail
+15_a96f8dae-da54-4fad-bdc6-108da592707a_3NMDC-G7C3W-68RGP-CB4MH-4C%f%XCH_SubTest1______O365HomePremRetail
+15_e3dacc06-3bc2-4e13-8e59-8e05f3232325_H8DN8-Y2YP3-CR9JT-DHDR9-C7%f%GP3_Subscription2_O365ProPlusRetail
+15_0bc1dae4-6158-4a1c-a893-807665b934b2_2QCNB-RMDKJ-GC8PB-7QGQV-7Q%f%TQJ_Subscription2_O365SmallBusPremRetail
 :: Office 365 - 16.0 version
-16_6337137e-7c07-4197-8986-bece6a76fc33_2P3C9-BQNJH-VCVPH-YDY6M-43%f%JPQ_Subscription__O365BusinessRetail
+16_742178ed-6b28-42dd-b3d7-b7c0ea78741b_Y9NF9-M2QWD-FF6RJ-QJW36-RR%f%F2T_SubTest_______O365BusinessRetail
 16_2f5c71b4-5b7a-4005-bb68-f9fac26f2ea3_W62NQ-267QR-RTF74-PF2MH-JQ%f%MTH_Subscription__O365EduCloudRetail
-16_537ea5b5-7d50-4876-bd38-a53a77caca32_J2W28-TN9C8-26PWV-F7J4G-72%f%XCB_Subscription1_O365HomePremRetail
-16_149dbce7-a48e-44db-8364-a53386cd4580_2N382-D6PKK-QTX4D-2JJYK-M9%f%6P2_Subscription1_O365ProPlusRetail
-16_bacd4614-5bef-4a5e-bafc-de4c788037a2_HN8JP-87TQJ-PBF3P-Y66KC-W2%f%K9V_Subscription1_O365SmallBusPremRetail
+16_a96f8dae-da54-4fad-bdc6-108da592707a_3NMDC-G7C3W-68RGP-CB4MH-4C%f%XCH_SubTest1______O365HomePremRetail
+16_e3dacc06-3bc2-4e13-8e59-8e05f3232325_H8DN8-Y2YP3-CR9JT-DHDR9-C7%f%GP3_Subscription2_O365ProPlusRetail
+16_0bc1dae4-6158-4a1c-a893-807665b934b2_2QCNB-RMDKJ-GC8PB-7QGQV-7Q%f%TQJ_Subscription2_O365SmallBusPremRetail
 :: Office 2016
 16_bfa358b0-98f1-4125-842e-585fa13032e6_WHK4N-YQGHB-XWXCC-G3HYC-6J%f%F94_Retail________AccessRetail
 16_9d9faf9e-d345-4b49-afce-68cb0a539c7c_RNB7V-P48F4-3FYY6-2P3R3-63%f%BQV_PrepidBypass__AccessRuntimeRetail
@@ -2310,11 +2402,13 @@ $MemoryStream.Close()
 ::
 ::  The files are encoded in base64 to make AIO version.
 ::
+::  
 ::  Here you can find the files source code and info on how to rebuild the identical sppc.dll files
 ::
 ::  stackoverflow.com/a/35335273
 ::  Here you can check how to extract sppc.dll files from base64
 ::
+::  
 ::
 ::========================================================================================================================================
 ::
